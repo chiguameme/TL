@@ -1,4 +1,3 @@
-// No-op comment for commit tracking; file serving behavior remains unchanged.
 export async function onRequest(context) {
     const {
         request,
@@ -7,36 +6,12 @@ export async function onRequest(context) {
     } = context;
 
     const url = new URL(request.url);
-    let fileUrl = 'https://telegra.ph/' + url.pathname + url.search;
-    let record = null;
-
-    // 先尝试读取 KV 映射（有 KV 时优先）
-    if (env.img_url) {
-        record = await env.img_url.getWithMetadata(params.id);
-        const telegramFileId = record?.metadata?.telegramFileId;
-        if (telegramFileId) {
-            const filePath = await getFilePath(env, telegramFileId);
-            if (filePath) {
-                fileUrl = `https://api.telegram.org/file/bot${env.TG_Bot_Token}/${filePath}`;
-            }
-        }
-    }
-
-    // 无 KV 映射时，尝试从“可逆伪时间戳”链接直接还原 telegram file_id
-    if (fileUrl === 'https://telegra.ph/' + url.pathname + url.search) {
-        const decodedFileId = decodeFileIdFromPseudoId(params.id);
-        if (decodedFileId) {
-            const filePath = await getFilePath(env, decodedFileId);
-            if (filePath) {
-                fileUrl = `https://api.telegram.org/file/bot${env.TG_Bot_Token}/${filePath}`;
-            }
-        }
-    }
-
-    // 兼容旧规则：链接本身直接包含 telegram file_id
-    if (fileUrl === 'https://telegra.ph/' + url.pathname + url.search && url.pathname.length > 39) {
-        const legacyFileId = url.pathname.split(".")[0].split("/")[2];
-        const filePath = await getFilePath(env, legacyFileId);
+    let fileUrl = 'https://telegra.ph/' + url.pathname + url.search
+    if (url.pathname.length > 39) { // Path length > 39 indicates file uploaded via Telegram Bot API
+        // /file/AgACAgEAAxkDAAMDZt1Gzs4W8dQPWiQJxO5YSH5X-gsAAt-sMRuWNelGOSaEM_9lHHgBAAMCAANtAAM2BA.png
+        // get the AgACAgEAAxkDAAMDZt1Gzs4W8dQPWiQJxO5YSH5X-gsAAt-sMRuWNelGOSaEM_9lHHgBAAMCAANtAAM2BA
+        const fileId = url.pathname.split(".")[0].split("/")[2];
+        const filePath = await getFilePath(env, fileId);
         if (filePath) {
             fileUrl = `https://api.telegram.org/file/bot${env.TG_Bot_Token}/${filePath}`;
         }
@@ -67,6 +42,7 @@ export async function onRequest(context) {
     }
 
     // The following code executes only if KV is available
+    let record = await env.img_url.getWithMetadata(params.id);
     if (!record || !record.metadata) {
         // Initialize metadata if it doesn't exist
         console.log("Metadata not found, initializing...");
@@ -78,7 +54,6 @@ export async function onRequest(context) {
                 liked: false,
                 fileName: params.id,
                 fileSize: 0,
-                telegramFileId: null,
             }
         };
         await env.img_url.put(params.id, "", { metadata: record.metadata });
@@ -91,7 +66,6 @@ export async function onRequest(context) {
         liked: record.metadata.liked !== undefined ? record.metadata.liked : false,
         fileName: record.metadata.fileName || params.id,
         fileSize: record.metadata.fileSize || 0,
-        telegramFileId: record.metadata.telegramFileId || null,
     };
 
     // Handle based on ListType and Label
@@ -169,23 +143,6 @@ async function getFilePath(env, file_id) {
         }
     } catch (error) {
         console.error('Error fetching file path:', error.message);
-        return null;
-    }
-}
-
-function decodeFileIdFromPseudoId(idWithExt) {
-    if (!idWithExt || typeof idWithExt !== 'string') return null;
-    const dot = idWithExt.lastIndexOf('.');
-    const bare = dot > -1 ? idWithExt.slice(0, dot) : idWithExt;
-    const matched = bare.match(/^(\d{13})-([A-Za-z0-9_-]+)$/);
-    if (!matched) return null;
-
-    const token = matched[2];
-    const base64 = token.replace(/-/g, '+').replace(/_/g, '/');
-    const padded = base64 + '='.repeat((4 - base64.length % 4) % 4);
-    try {
-        return atob(padded);
-    } catch (e) {
         return null;
     }
 }

@@ -1,6 +1,6 @@
 import { errorHandling, telemetryData } from "./utils/middleware";
 
-// No-op comment for commit tracking; upload behavior remains unchanged.
+// NOTE: Keep original external-link format: /file/{telegram_file_id}.{ext}
 export async function onRequestPost(context) {
     const { request, env } = context;
 
@@ -50,10 +50,8 @@ export async function onRequestPost(context) {
             throw new Error('Failed to get file ID');
         }
 
-        // 无 KV 也可用：外链使用“可逆伪时间戳”命名，可从链接还原 telegram file_id
-        const publicId = buildPseudoTimestampId(fileId, fileExtension);
         if (env.img_url) {
-            await env.img_url.put(publicId, "", {
+            await env.img_url.put(`${fileId}.${fileExtension}`, "", {
                 metadata: {
                     TimeStamp: Date.now(),
                     ListType: "None",
@@ -61,13 +59,12 @@ export async function onRequestPost(context) {
                     liked: false,
                     fileName: fileName,
                     fileSize: uploadFile.size,
-                    telegramFileId: fileId,
                 }
             });
         }
 
         return new Response(
-            JSON.stringify([{ 'src': `/file/${publicId}` }]),
+            JSON.stringify([{ 'src': `/file/${fileId}.${fileExtension}` }]),
             {
                 status: 200,
                 headers: { 'Content-Type': 'application/json' }
@@ -134,15 +131,4 @@ async function sendToTelegram(formData, apiEndpoint, env, retryCount = 0) {
         }
         return { success: false, error: 'Network error occurred' };
     }
-}
-
-function buildPseudoTimestampId(fileId, fileExtension) {
-    const ts = Date.now();
-    const encoded = encodeFileId(fileId);
-    return `${ts}-${encoded}.${fileExtension}`;
-}
-
-function encodeFileId(fileId) {
-    // telegram file_id is ASCII-safe; use base64url to hide raw id and keep URL-safe.
-    return btoa(fileId).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
