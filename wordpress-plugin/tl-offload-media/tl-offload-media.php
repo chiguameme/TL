@@ -2,7 +2,7 @@
 /**
  * Plugin Name: TL Offload Media
  * Description: Offload WordPress image/video to a Telegraph-Image compatible endpoint. Supports separate TL upload page and old-domain URL sync.
- * Version: 1.1.0
+ * Version: 1.2.0
  * Author: TL
  */
 
@@ -101,7 +101,7 @@ final class TL_Offload_Media {
         }
 
         wp_enqueue_script('jquery');
-        wp_register_script('tl-offload-editor-upload', false, array('jquery'), '1.1.0', true);
+        wp_register_script('tl-offload-editor-upload', false, array('jquery'), '1.2.0', true);
         wp_enqueue_script('tl-offload-editor-upload');
 
         $config = array(
@@ -522,12 +522,25 @@ JS;
             return false;
         }
 
-        $ch = curl_init(self::get_upload_endpoint());
-        if (!$ch) {
+        $prepared = self::prepare_upload_payload($file_path, $file_name, $mime);
+        if (is_wp_error($prepared)) {
             return false;
         }
 
-        $cfile = curl_file_create($file_path, $mime, $file_name);
+        $upload_path = $prepared['path'];
+        $upload_name = $prepared['name'];
+        $upload_mime = $prepared['mime'];
+        $should_cleanup = !empty($prepared['cleanup']);
+
+        $ch = curl_init(self::get_upload_endpoint());
+        if (!$ch) {
+            if ($should_cleanup && is_file($upload_path)) {
+                @unlink($upload_path);
+            }
+            return false;
+        }
+
+        $cfile = curl_file_create($upload_path, $upload_mime, $upload_name);
         $post_fields = array('file' => $cfile);
 
         curl_setopt_array($ch, array(
@@ -540,6 +553,9 @@ JS;
         $response_body = curl_exec($ch);
         $status_code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         curl_close($ch);
+        if ($should_cleanup && is_file($upload_path)) {
+            @unlink($upload_path);
+        }
 
         if ($status_code !== 200 || !$response_body) {
             return false;
@@ -555,6 +571,132 @@ JS;
             return $src;
         }
         return untrailingslashit(self::get_base_url()) . '/' . ltrim($src, '/');
+    }
+
+    private static function prepare_upload_payload($file_path, $file_name, $mime) {
+        $payload = array(
+            'path' => $file_path,
+            'name' => $file_name,
+            'mime' => $mime,
+            'cleanup' => false,
+        );
+
+        if (strpos((string) $mime, 'image/') !== 0) {
+            return $payload;
+        }
+
+        if (!function_exists('imagecreatefromstring') || !function_exists('imagewebp') || !function_exists('imagecreatetruecolor')) {
+            return $payload;
+        }
+
+        $raw = @file_get_contents($file_path);
+        if ($raw === false) {
+            return $payload;
+        }
+
+        $src = @imagecreatefromstring($raw);
+        if (!$src) {
+            return $payload;
+        }
+
+        $max_edge = 1000;
+        $max_bytes = 200 * 1024;
+        $qualities = array(82, 76, 70, 64, 58, 52, 46, 40, 34, 28);
+        $min_edge = 320;
+
+        $src_w = imagesx($src);
+        $src_h = imagesy($src);
+        $scale = min(1, $max_edge / max($src_w, $src_h));
+        $target_w = max(1, (int) floor($src_w * $scale));
+        $target_h = max(1, (int) floor($src_h * $scale));
+
+        $working = self::resample_image($src, $src_w, $src_h, $target_w, $target_h);
+        imagedestroy($src);
+        if (!$working) {
+            return $payload;
+        }
+
+        $tmp_base = wp_tempnam('tl_offload_webp');
+        if (!$tmp_base) {
+            imagedestroy($working);
+            return $payload;
+        }
+        $tmp_webp = $tmp_base . '.webp';
+        @unlink($tmp_base);
+
+        $ok = false;
+        $current_w = $target_w;
+        $current_h = $target_h;
+
+        for ($round = 0; $round < 8; $round++) {
+            foreach ($qualities as $quality) {
+                if (!@imagewebp($working, $tmp_webp, $quality)) {
+                    continue;
+                }
+                $size = @filesize($tmp_webp);
+                if ($size !== false && $size <= $max_bytes) {
+                    $ok = true;
+                    break 2;
+                }
+            }
+
+            if (max($current_w, $current_h) <= $min_edge) {
+                break;
+            }
+
+            $next_w = max(1, (int) floor($current_w * 0.88));
+            $next_h = max(1, (int) floor($current_h * 0.88));
+            if ($next_w === $current_w && $next_h === $current_h) {
+                break;
+            }
+
+            $next = self::resample_image($working, $current_w, $current_h, $next_w, $next_h);
+            if (!$next) {
+                break;
+            }
+            imagedestroy($working);
+            $working = $next;
+            $current_w = $next_w;
+            $current_h = $next_h;
+        }
+
+        imagedestroy($working);
+
+        if (!$ok || !is_file($tmp_webp)) {
+            @unlink($tmp_webp);
+            return $payload;
+        }
+
+        $safe_name = pathinfo((string) $file_name, PATHINFO_FILENAME);
+        if ($safe_name === '') {
+            $safe_name = 'image';
+        }
+
+        return array(
+            'path' => $tmp_webp,
+            'name' => $safe_name . '.webp',
+            'mime' => 'image/webp',
+            'cleanup' => true,
+        );
+    }
+
+    private static function resample_image($source, $src_w, $src_h, $dst_w, $dst_h) {
+        $canvas = imagecreatetruecolor($dst_w, $dst_h);
+        if (!$canvas) {
+            return false;
+        }
+
+        imagealphablending($canvas, false);
+        imagesavealpha($canvas, true);
+        $transparent = imagecolorallocatealpha($canvas, 0, 0, 0, 127);
+        imagefill($canvas, 0, 0, $transparent);
+
+        if (!imagecopyresampled($canvas, $source, 0, 0, 0, 0, $dst_w, $dst_h, $src_w, $src_h)) {
+            imagedestroy($canvas);
+            return false;
+        }
+
+        return $canvas;
     }
 }
 
