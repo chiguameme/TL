@@ -246,8 +246,120 @@
   setTimeout(function () { obs.disconnect(); }, 10000);
 })();
 </script>
+<script id="tl-format-modes">
+(function(){
+  if(window.__tlFormatModesLoaded)return;
+  window.__tlFormatModesLoaded=true;
+
+  var mode='url';
+
+  function escapeHtmlAttr(s){
+    return String(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function getVm(){
+    var host=document.getElementById('paste');
+    if(!host) return null;
+    var q=[host.__vue__], seen=[];
+    while(q.length){
+      var vm=q.shift();
+      if(!vm || seen.indexOf(vm)>-1) continue;
+      seen.push(vm);
+      if(typeof vm.upload==='function' && 'imgUrl' in vm) return vm;
+      if(vm.$children && vm.$children.length){
+        for(var i=0;i<vm.$children.length;i++) q.push(vm.$children[i]);
+      }
+    }
+    return null;
+  }
+
+  function getUrl(){
+    var vm=getVm();
+    if(vm && vm.imgUrl) return vm.imgUrl;
+    var input=document.getElementById('url-content');
+    if(!input || !input.value) return '';
+    var v=input.value.trim();
+    var m=v.match(/^!\[\]\((.+)\)$/);
+    return m?m[1]:v;
+  }
+
+  function buildText(url){
+    if(!url) return '';
+    if(mode==='markdown') return '![]('+url+')';
+    if(mode==='html') return '<img src="'+escapeHtmlAttr(url)+'" alt="" />';
+    return url;
+  }
+
+  function ensureStyle(){
+    if(document.getElementById('tl-format-modes-style')) return;
+    var st=document.createElement('style');
+    st.id='tl-format-modes-style';
+    st.textContent='\n.tl-format-panel{width:80%;margin-top:10px;font-size:12px;color:#606266;}\n.tl-format-tabs{display:flex;gap:6px;margin-bottom:6px;}\n.tl-format-tab{border:1px solid #d1d5da;background:#fff;border-radius:12px;padding:3px 10px;cursor:pointer;}\n.tl-format-tab.active{background:#0297f8;color:#fff;border-color:#0297f8;}\n.tl-format-row{display:flex;gap:6px;}\n.tl-format-text{flex:1;border:1px solid #d1d5da;border-radius:4px;padding:6px;font-size:12px;line-height:16px;background:#fff;resize:vertical;min-height:44px;max-height:120px;}\n.tl-format-copy{border:1px solid #d1d5da;background:#eff3f6;border-radius:4px;padding:0 10px;cursor:pointer;white-space:nowrap;}\n';
+    document.head.appendChild(st);
+  }
+
+  function copyText(text){
+    if(!text) return;
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).catch(function(){});
+      return;
+    }
+    var ta=document.createElement('textarea');
+    ta.value=text;
+    document.body.appendChild(ta);
+    ta.select();
+    try{document.execCommand('copy');}catch(e){}
+    document.body.removeChild(ta);
+  }
+
+  function render(){
+    ensureStyle();
+    var done=document.querySelector('#paste .area.done .url-box');
+    if(!done) return;
+
+    var panel=document.getElementById('tl-format-panel');
+    if(!panel){
+      panel=document.createElement('div');
+      panel.id='tl-format-panel';
+      panel.className='tl-format-panel';
+      panel.innerHTML='\n<div class="tl-format-tabs">\n  <button class="tl-format-tab" data-mode="url" type="button">URL</button>\n  <button class="tl-format-tab" data-mode="markdown" type="button">Markdown</button>\n  <button class="tl-format-tab" data-mode="html" type="button">HTML</button>\n</div>\n<div class="tl-format-row">\n  <textarea class="tl-format-text" id="tl-format-text" readonly></textarea>\n  <button class="tl-format-copy" id="tl-format-copy" type="button">复制</button>\n</div>';
+      done.appendChild(panel);
+
+      panel.addEventListener('click',function(e){
+        var b=e.target.closest('.tl-format-tab');
+        if(!b) return;
+        mode=b.getAttribute('data-mode')||'url';
+        update();
+      });
+
+      panel.querySelector('#tl-format-copy').addEventListener('click',function(){
+        var t=panel.querySelector('#tl-format-text').value||'';
+        copyText(t);
+      });
+    }
+    update();
+  }
+
+  function update(){
+    var panel=document.getElementById('tl-format-panel');
+    if(!panel) return;
+    var url=getUrl();
+    var text=buildText(url);
+    var ta=panel.querySelector('#tl-format-text');
+    if(ta) ta.value=text;
+    var tabs=panel.querySelectorAll('.tl-format-tab');
+    for(var i=0;i<tabs.length;i++){
+      tabs[i].classList.toggle('active',tabs[i].getAttribute('data-mode')===mode);
+    }
+    panel.style.display=url?'block':'none';
+  }
+
+  setInterval(render, 600);
+})();
+</script>
 </body>
 </html>
+
 
 
 
