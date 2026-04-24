@@ -298,8 +298,38 @@ document.addEventListener('DOMContentLoaded', function() {
   }, true);
 })();
 </script>
+<script id="tl-title-fix">
+(function () {
+  if (window.__tlTitleFixLoaded) return;
+  window.__tlTitleFixLoaded = true;
+
+  function normalizeTitle() {
+    var nodes = document.querySelectorAll('.main .title, .title');
+    for (var i = 0; i < nodes.length; i++) {
+      var t = (nodes[i].textContent || '').trim();
+      if (t === 'Telegraph-Image') {
+        nodes[i].textContent = 'TL';
+      }
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', normalizeTitle);
+  } else {
+    normalizeTitle();
+  }
+
+  var obs = new MutationObserver(function () {
+    normalizeTitle();
+  });
+  obs.observe(document.documentElement, { childList: true, subtree: true });
+
+  setTimeout(function () { obs.disconnect(); }, 10000);
+})();
+</script>
 </body>
 </html>
+
 
 
 
