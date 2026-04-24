@@ -1,3 +1,4 @@
+// No-op comment for commit tracking; file serving behavior remains unchanged.
 export async function onRequest(context) {
     const {
         request,
