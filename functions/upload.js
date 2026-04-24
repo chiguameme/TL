@@ -49,9 +49,11 @@ export async function onRequestPost(context) {
             throw new Error('Failed to get file ID');
         }
 
-        // 将文件信息保存到 KV 存储
+        // 默认沿用旧链接规则；有 KV 时改为时间戳命名并写入映射
+        let publicId = `${fileId}.${fileExtension}`;
         if (env.img_url) {
-            await env.img_url.put(`${fileId}.${fileExtension}`, "", {
+            publicId = buildTimestampId(fileExtension);
+            await env.img_url.put(publicId, "", {
                 metadata: {
                     TimeStamp: Date.now(),
                     ListType: "None",
@@ -59,12 +61,13 @@ export async function onRequestPost(context) {
                     liked: false,
                     fileName: fileName,
                     fileSize: uploadFile.size,
+                    telegramFileId: fileId,
                 }
             });
         }
 
         return new Response(
-            JSON.stringify([{ 'src': `/file/${fileId}.${fileExtension}` }]),
+            JSON.stringify([{ 'src': `/file/${publicId}` }]),
             {
                 status: 200,
                 headers: { 'Content-Type': 'application/json' }
@@ -131,4 +134,10 @@ async function sendToTelegram(formData, apiEndpoint, env, retryCount = 0) {
         }
         return { success: false, error: 'Network error occurred' };
     }
+}
+
+function buildTimestampId(fileExtension) {
+    const ts = Date.now();
+    const nonce = Math.floor(Math.random() * 1000).toString().padStart(3, "0");
+    return `${ts}${nonce}.${fileExtension}`;
 }

@@ -6,22 +6,28 @@ export async function onRequest(context) {
     } = context;
 
     const url = new URL(request.url);
-    let fileUrl = 'https://telegra.ph/' + url.pathname + url.search
-    if (url.pathname.length > 39) { // Path length > 39 indicates file uploaded via Telegram Bot API
-        const formdata = new FormData();
-        formdata.append("file_id", url.pathname);
+    let fileUrl = 'https://telegra.ph/' + url.pathname + url.search;
+    let record = null;
 
-        const requestOptions = {
-            method: "POST",
-            body: formdata,
-            redirect: "follow"
-        };
-        // /file/AgACAgEAAxkDAAMDZt1Gzs4W8dQPWiQJxO5YSH5X-gsAAt-sMRuWNelGOSaEM_9lHHgBAAMCAANtAAM2BA.png
-        //get the AgACAgEAAxkDAAMDZt1Gzs4W8dQPWiQJxO5YSH5X-gsAAt-sMRuWNelGOSaEM_9lHHgBAAMCAANtAAM2BA
-        console.log(url.pathname.split(".")[0].split("/")[2])
-        const filePath = await getFilePath(env, url.pathname.split(".")[0].split("/")[2]);
-        console.log(filePath)
-        fileUrl = `https://api.telegram.org/file/bot${env.TG_Bot_Token}/${filePath}`;
+    // 先尝试读取 KV 映射（时间戳命名场景）
+    if (env.img_url) {
+        record = await env.img_url.getWithMetadata(params.id);
+        const telegramFileId = record?.metadata?.telegramFileId;
+        if (telegramFileId) {
+            const filePath = await getFilePath(env, telegramFileId);
+            if (filePath) {
+                fileUrl = `https://api.telegram.org/file/bot${env.TG_Bot_Token}/${filePath}`;
+            }
+        }
+    }
+
+    // 兼容旧规则：链接本身包含 telegram file_id
+    if (fileUrl === 'https://telegra.ph/' + url.pathname + url.search && url.pathname.length > 39) {
+        const legacyFileId = url.pathname.split(".")[0].split("/")[2];
+        const filePath = await getFilePath(env, legacyFileId);
+        if (filePath) {
+            fileUrl = `https://api.telegram.org/file/bot${env.TG_Bot_Token}/${filePath}`;
+        }
     }
 
     const response = await fetch(fileUrl, {
@@ -49,7 +55,6 @@ export async function onRequest(context) {
     }
 
     // The following code executes only if KV is available
-    let record = await env.img_url.getWithMetadata(params.id);
     if (!record || !record.metadata) {
         // Initialize metadata if it doesn't exist
         console.log("Metadata not found, initializing...");
@@ -61,6 +66,7 @@ export async function onRequest(context) {
                 liked: false,
                 fileName: params.id,
                 fileSize: 0,
+                telegramFileId: null,
             }
         };
         await env.img_url.put(params.id, "", { metadata: record.metadata });
@@ -73,6 +79,7 @@ export async function onRequest(context) {
         liked: record.metadata.liked !== undefined ? record.metadata.liked : false,
         fileName: record.metadata.fileName || params.id,
         fileSize: record.metadata.fileSize || 0,
+        telegramFileId: record.metadata.telegramFileId || null,
     };
 
     // Handle based on ListType and Label

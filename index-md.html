@@ -130,8 +130,8 @@ document.addEventListener('DOMContentLoaded', function() {
   if (window.__tlUploadEnhancerLoaded) return;
   window.__tlUploadEnhancerLoaded = true;
 
-  function isImageMime(type) {
-    return typeof type === "string" && type.indexOf("image/") === 0;
+  function isUploadableMediaMime(type) {
+    return typeof type === "string" && (type.indexOf("image/") === 0 || type.indexOf("video/") === 0);
   }
 
   function guessNameFromUrl(url, fallbackExt) {
@@ -140,17 +140,37 @@ document.addEventListener('DOMContentLoaded', function() {
       var name = pathname.split("/").pop() || "";
       if (name && name.indexOf(".") > -1) return name;
     } catch (e) {}
-    return "pasted-image." + (fallbackExt || "png");
+    return "pasted-media." + (fallbackExt || "bin");
   }
 
   function blobExt(type) {
-    if (!type) return "png";
+    if (!type) return "bin";
     if (type.indexOf("jpeg") > -1) return "jpg";
     if (type.indexOf("gif") > -1) return "gif";
     if (type.indexOf("webp") > -1) return "webp";
     if (type.indexOf("bmp") > -1) return "bmp";
     if (type.indexOf("svg") > -1) return "svg";
-    return "png";
+    if (type.indexOf("png") > -1) return "png";
+    if (type.indexOf("mp4") > -1) return "mp4";
+    if (type.indexOf("webm") > -1) return "webm";
+    if (type.indexOf("quicktime") > -1) return "mov";
+    if (type.indexOf("x-matroska") > -1) return "mkv";
+    return "bin";
+  }
+
+  function inferMimeFromName(name, fallbackType) {
+    var lower = (name || "").toLowerCase();
+    if (lower.endsWith(".jpg") || lower.endsWith(".jpeg")) return "image/jpeg";
+    if (lower.endsWith(".png")) return "image/png";
+    if (lower.endsWith(".gif")) return "image/gif";
+    if (lower.endsWith(".webp")) return "image/webp";
+    if (lower.endsWith(".bmp")) return "image/bmp";
+    if (lower.endsWith(".svg")) return "image/svg+xml";
+    if (lower.endsWith(".mp4")) return "video/mp4";
+    if (lower.endsWith(".webm")) return "video/webm";
+    if (lower.endsWith(".mov")) return "video/quicktime";
+    if (lower.endsWith(".mkv")) return "video/x-matroska";
+    return fallbackType || "application/octet-stream";
   }
 
   function setDragActive(active) {
@@ -202,33 +222,34 @@ document.addEventListener('DOMContentLoaded', function() {
     return true;
   }
 
-  async function uploadImageUrl(url) {
+  async function uploadMediaUrl(url) {
     if (!/^https?:\/\//i.test(url)) return false;
 
     var res = await fetch(url);
-    if (!res.ok) throw new Error("image_url_fetch_failed");
+    if (!res.ok) throw new Error("media_url_fetch_failed");
 
     var blob = await res.blob();
-    if (!isImageMime(blob.type)) throw new Error("not_image_url");
-
     var name = guessNameFromUrl(url, blobExt(blob.type));
-    var file = new File([blob], name, { type: blob.type || "image/png" });
+    var mime = inferMimeFromName(name, blob.type || "application/octet-stream");
+    if (!isUploadableMediaMime(mime)) throw new Error("not_supported_media_url");
+
+    var file = new File([blob], name, { type: mime });
     return uploadFile(file);
   }
 
-  function pickImageFileFromDataTransfer(dt) {
+  function pickMediaFileFromDataTransfer(dt) {
     if (!dt) return null;
 
     if (dt.files && dt.files.length) {
       for (var i = 0; i < dt.files.length; i++) {
-        if (isImageMime(dt.files[i].type)) return dt.files[i];
+        if (isUploadableMediaMime(dt.files[i].type)) return dt.files[i];
       }
     }
 
     if (dt.items && dt.items.length) {
       for (var j = 0; j < dt.items.length; j++) {
         var item = dt.items[j];
-        if (item && item.kind === "file" && isImageMime(item.type)) {
+        if (item && item.kind === "file" && isUploadableMediaMime(item.type)) {
           var file = item.getAsFile();
           if (file) return file;
         }
@@ -262,7 +283,7 @@ document.addEventListener('DOMContentLoaded', function() {
     dragDepth = 0;
     setDragActive(false);
 
-    var file = pickImageFileFromDataTransfer(e.dataTransfer);
+    var file = pickMediaFileFromDataTransfer(e.dataTransfer);
     if (file) {
       uploadFile(file);
       return;
@@ -275,11 +296,11 @@ document.addEventListener('DOMContentLoaded', function() {
     text = (text || "").trim();
     if (!text) return;
 
-    uploadImageUrl(text).catch(function () {});
+    uploadMediaUrl(text).catch(function () {});
   });
 
   document.addEventListener("paste", function (e) {
-    var file = pickImageFileFromDataTransfer(e.clipboardData);
+    var file = pickMediaFileFromDataTransfer(e.clipboardData);
     if (file) {
       e.preventDefault();
       if (typeof e.stopImmediatePropagation === "function") e.stopImmediatePropagation();
@@ -294,7 +315,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
     e.preventDefault();
     if (typeof e.stopImmediatePropagation === "function") e.stopImmediatePropagation();
-    uploadImageUrl(text).catch(function () {});
+    uploadMediaUrl(text).catch(function () {});
   }, true);
 })();
 </script>
@@ -329,6 +350,7 @@ document.addEventListener('DOMContentLoaded', function() {
 </script>
 </body>
 </html>
+
 
 
 
