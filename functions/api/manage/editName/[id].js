@@ -1,5 +1,12 @@
 export async function onRequest(context) {
-    const { params, env } = context;
+    const { request, params, env } = context;
+
+    if (!params?.id) {
+        return new Response(JSON.stringify({ success: false, error: 'Missing image id.' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+        });
+    }
 
     console.log("Request ID:", params.id);
 
@@ -8,10 +15,22 @@ export async function onRequest(context) {
     console.log("Current metadata:", value);
 
     // 如果记录不存在
-    if (!value.metadata) return new Response(`Image metadata not found for ID: ${params.id}`, { status: 404 });
+    if (!value || !value.metadata) {
+        return new Response(JSON.stringify({ success: false, error: `Image metadata not found for ID: ${params.id}` }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' },
+        });
+    }
 
-    // 更新文件名
-    value.metadata.fileName = params.name;
+    // 更新文件名（兼容 query 参数 newName）
+    const newName = new URL(request.url).searchParams.get("newName") || params.name;
+    if (!newName || !newName.trim()) {
+        return new Response(JSON.stringify({ success: false, error: 'newName cannot be empty.' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' },
+        });
+    }
+    value.metadata.fileName = newName.trim();
     await env.img_url.put(params.id, "", { metadata: value.metadata });
 
     console.log("Updated metadata:", value.metadata);

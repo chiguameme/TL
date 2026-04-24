@@ -8,11 +8,17 @@ export async function onRequest(context) {
       next, // used for middleware or to fetch assets
       data, // arbitrary space for passing data between middlewares
     } = context;
-    console.log(env)
+    if (!params?.id) {
+      return new Response('Missing image id.', { status: 400 });
+    }
+
     console.log(params.id)
     //read the metadata
     const value = await env.img_url.getWithMetadata(params.id);
     console.log(value)
+    if (!value || !value.metadata) {
+      return new Response(`Image metadata not found for ID: ${params.id}`, { status: 404 });
+    }
     //"metadata":{"TimeStamp":19876541,"ListType":"None","rating_label":"None"}
     //change the metadata
     value.metadata.ListType = "Block"

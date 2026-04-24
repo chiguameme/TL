@@ -8,8 +8,17 @@ export async function onRequest(context) {
       next, // used for middleware or to fetch assets
       data, // arbitrary space for passing data between middlewares
     } = context;
-    console.log(env)
+    if (!params?.id) {
+      return new Response('Missing image id.', { status: 400 });
+    }
+
     console.log(params.id)
+
+    const value = await env.img_url.getWithMetadata(params.id);
+    if (!value || !value.metadata) {
+      return new Response(`Image metadata not found for ID: ${params.id}`, { status: 404 });
+    }
+
     await env.img_url.delete(params.id);
     const info = JSON.stringify(params.id);
     return new Response(info);
