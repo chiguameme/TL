@@ -546,7 +546,7 @@ JS;
         curl_setopt_array($ch, array(
             CURLOPT_POST => true,
             CURLOPT_RETURNTRANSFER => true,
-            CURLOPT_TIMEOUT => 45,
+            CURLOPT_TIMEOUT => 120,
             CURLOPT_POSTFIELDS => $post_fields,
         ));
 
